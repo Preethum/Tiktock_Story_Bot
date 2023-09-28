@@ -1,0 +1,8 @@
+Convert to 9:16 ratio + crop:
+
+ffmpeg -i input.mp4 -filter:v "crop=9/16*ih:ih" F:\temp_vid\output_2.mp4
+
+
+Split the videos in to 10 min(Max on tiktok) videos, please remove all the exta videos at the end:
+
+ffmpeg -i F:\temp_vid\output_1.mp4 -c copy -map 0 -segment_time 00:10:00 -f segment -reset_timestamps 1 F:\temp_vid\output_1_%03d.mp4
