@@ -1,5 +1,18 @@
 import threading, requests, base64
 from playsound import playsound
+from moviepy.editor import AudioFileClip
+import tempfile
+
+
+temp_files = []
+
+
+def set_temp(location):
+    temp_files.append(location)
+
+
+def get_temp():
+    return temp_files
 
 
 VOICES = [
@@ -77,10 +90,19 @@ def get_api_response() -> requests.Response:
     return response
 
 
-def save_audio_file(base64_data: str, filename: str = "output.mp3") -> None:
+def save_audio_file(base64_data: str, Title: False):
     audio_bytes = base64.b64decode(base64_data)
-    with open(filename, "wb") as file:
-        file.write(audio_bytes)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio_file:
+        temp_audio_file.write(audio_bytes)
+
+    temp_audio_path = temp_audio_file.name
+    set_temp(temp_audio_path)
+
+    audio_clip = AudioFileClip(temp_audio_path)
+    if Title is True:
+        audio_clip = audio_clip.subclip(0.4, -0.4)
+
+    return audio_clip
 
 
 def generate_audio(text: str, voice: str) -> bytes:
@@ -91,16 +113,11 @@ def generate_audio(text: str, voice: str) -> bytes:
     return response.content
 
 
-def tts(text: str, voice: str = "none", filename: str = "output.mp3") -> None:
+def tts(text: str, voice: str = "none", Title=False):
     global current_endpoint
-
-    if get_api_response().status_code == 200:
-        print("")
-    else:
+    if get_api_response().status_code != 200:
         current_endpoint = (current_endpoint + 1) % 2
-        if get_api_response().status_code == 200:
-            print("")
-        else:
+        if get_api_response().status_code != 200:
             print(
                 f"Service not available and probably temporarily rate limited, try again later..."
             )
@@ -160,7 +177,9 @@ def tts(text: str, voice: str = "none", filename: str = "output.mp3") -> None:
 
             audio_base64_data = "".join(audio_base64_data)
 
-        save_audio_file(audio_base64_data, filename)
+        audio_clip = save_audio_file(audio_base64_data, Title)
+
+        return audio_clip
 
     except Exception as e:
         print("Error occurred while generating audio:", str(e))

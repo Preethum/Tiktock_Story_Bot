@@ -25,23 +25,17 @@ def add_corners(im):
 
 def add_title(image, text):
     width, height = image.size
+    font_color = (255, 255, 255)
+    font_path = "RedditClips\\title_image_data\\NeueHaasDisplayMediu.ttf"
 
     draw = ImageDraw.Draw(image)
 
-    textbox_x = 400
-    textbox_y = 250
-    textbox_width = width - 450
+    textbox_x = 50
+    textbox_y = 260
+    textbox_width = width - 100
     textbox_height = height - 400
 
-    max_font_size = 400
-
-    font_color = (255, 255, 255)
-
-    font_path = "verdana.ttf"
-
-    best_font_size = 0
-    best_text_lines = []
-    best_text_height = 0
+    max_font_size = 130
 
     for font_size in range(max_font_size, 0, -1):
         font = ImageFont.truetype(font_path, font_size)
@@ -66,8 +60,28 @@ def add_title(image, text):
             best_text_height = text_height
             break
 
-    text_x = textbox_x + 10
-    text_y = textbox_y + 10
+    text_x = textbox_x
+    text_y = textbox_y
+
+    draw.text(
+        (310, 40), "Anonymous", fill=(0, 0, 0), font=ImageFont.truetype(font_path, 80)
+    )
+    draw.text(
+        (423, 701),
+        "99+",
+        fill=(128, 128, 128),
+        font=ImageFont.truetype(
+            "RedditClips\\title_image_data\\NeueHaasDisplayRoman.ttf", 60
+        ),
+    )
+    draw.text(
+        (130, 701),
+        "99+",
+        fill=(128, 128, 128),
+        font=ImageFont.truetype(
+            "RedditClips\\title_image_data\\NeueHaasDisplayRoman.ttf", 60
+        ),
+    )
 
     lines = []
     current_line = ""
