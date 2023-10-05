@@ -5,31 +5,159 @@ from moviepy.editor import (
     VideoFileClip,
     ImageClip,
     CompositeVideoClip,
-    CompositeAudioClip,
 )
-import speech_recognition as sr
+from nltk.tokenize import sent_tokenize
 from pydub import AudioSegment
-import speech_recognition as sr
-from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, clips_array
-from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
+import numpy as np
+import csv
+from spellchecker import SpellChecker
+from nltk.tokenize import sent_tokenize
+from spellchecker import SpellChecker
+import language_tool_python
+import re
+from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import words
+from moviepy.editor import VideoFileClip, AudioFileClip, TextClip
 import assemblyai as aai
 import proglog
+import tempfile
+import requests
+from nltk.tokenize import sent_tokenize
+from spellchecker import SpellChecker
+import language_tool_python
+import re
+from nltk.tokenize import sent_tokenize, word_tokenize
+
+csv_file = "RedditClips\\movie_creation\\abbrevations.csv"
+temp_files = []
+known_acronyms = ["API", "HTML", "NASA"]
+custom_words = ["temp"]  # Add any custom words here
+spell = SpellChecker(language="en")
+grammar_tool = language_tool_python.LanguageTool("en-US")
+
+
+def set_temp(location):
+    temp_files.append(location)
+
+
+def get_temp():
+    return temp_files
+
+
+def add_missing_punctuation(sentence, prioritize_period=True):
+    if not sentence.endswith((".", "!", "?")):
+        sentence += "."
+
+    if prioritize_period and sentence.endswith("."):
+        sentence = sentence[:-1] + ","
+
+    return sentence
+
+
+def spell_check_word(word):
+    params = {
+        "text": word,
+        "language": "en-US",
+    }
+
+    response = requests.post("https://languagetool.org/api/v2/check", params=params)
+    if response.status_code == 200:
+        result = response.json()
+        if "matches" in result and result["matches"]:
+            suggestions = [match["replacements"][0] for match in result["matches"]]
+            return suggestions[0]
+    return word
+
+
+def bypass_known_acronyms(sentence):
+    words = word_tokenize(sentence)
+
+    for i in range(len(words)):
+        if words[i].upper() in known_acronyms:
+            words[i] = words[i].upper()
+
+    return " ".join(words)
+
+
+def load_abbreviations(csv_file):
+    abbreviations = {}
+    with open(csv_file, "r", encoding="utf-8", newline="") as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if len(row) == 2:
+                abbreviation, meaning = row
+                abbreviations[abbreviation] = meaning
+    return abbreviations
+
+
+def replace_abbreviations(paragraph, abbreviations):
+    words = paragraph.split()
+    replaced_words = []
+
+    for word in words:
+        word = word.strip(".,!?()[]{}\"'")
+
+        if word.upper() in abbreviations:
+            replaced_words.append(abbreviations[word.upper()])
+        else:
+            replaced_words.append(word)
+
+    modified_paragraph = " ".join(replaced_words)
+    return modified_paragraph
 
 
 def split_temp(text, max_length=200):
     segments = []
     current_segment = ""
+    current_length = 0
+    abbreviations = load_abbreviations(csv_file)
+    text = replace_abbreviations(text, abbreviations)
+    text = re.sub(r"[^\x00-\x7F]+", " ", text)
 
-    words = text.split()
+    split_text = re.split(r"(?<=[,.])\s+", text)
 
-    for word in words:
-        if len(current_segment) + len(word) + 1 <= max_length:
-            if current_segment:
-                current_segment += " "
-            current_segment += word
-        else:
-            segments.append(current_segment)
-            current_segment = word
+    for segment in split_text:
+        input_sentences = sent_tokenize(segment)
+
+        for sentence in input_sentences:
+            try:
+                words = sentence.split()
+
+                sentence = bypass_known_acronyms(sentence)
+
+                corrected_words = []
+                for word in words:
+                    if word is not None:
+                        if word in custom_words:
+                            corrected_word = spell_check_word(word)
+                            if corrected_word is None:
+                                corrected_word = word
+                        else:
+                            corrected_word = spell.correction(word)
+                            if corrected_word is None:
+                                corrected_word = word
+                        corrected_words.append(corrected_word)
+                    else:
+                        corrected_words.append(word)
+
+                corrected_sentence = " ".join(corrected_words)
+
+                corrected_sentence = add_missing_punctuation(
+                    corrected_sentence, prioritize_period=True
+                )
+
+                if current_length + len(corrected_sentence) + 1 <= max_length:
+                    if current_segment:
+                        current_segment += " "
+                    current_segment += corrected_sentence
+                    current_length += len(corrected_sentence) + 1
+                else:
+                    segments.append(current_segment)
+                    current_segment = corrected_sentence
+                    current_length = len(corrected_sentence)
+
+            except Exception as e:
+                print(f"Error processing sentence: {e}")
 
     if current_segment:
         segments.append(current_segment)
@@ -96,27 +224,28 @@ def captions(audio_file_path, key):
     text = "\n".join([segment["text"] for segment in adjusted_segments])
 
     adjusted_segments[0]["start"] = 0
-    with open(output_file_path, "w") as output_file:
-        for segment in adjusted_segments:
-            section_text = (
-                f"{segment['start']/1000}~{segment['end']/1000}~{segment['text']}"
-            )
-            output_file.write(section_text + "\n")
+    out_arr = []
+    for segment in adjusted_segments:
+        section_text = (
+            f"{segment['start']/1000}~{segment['end']/1000}~{segment['text']}"
+        )
+        out_arr.append(section_text)
+    return out_arr
 
 
 def combine_audio_files(list):
-    final_audio = []
-    bypass_first = True
-    for list_val in list:
-        audio_clip = AudioFileClip(list_val)
+    final_audio = AudioSegment.empty()
+    for segment in list:
+        audio_segment = AudioSegment.from_file(segment.filename, format="mp3")
+        faded_audio = audio_segment.fade_out(200).fade_in(200)
+        final_audio = final_audio + faded_audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_dir:
+            temp_dir_path = temp_dir.name
+            final_audio.export(temp_dir_path, format="wav")
+        set_temp(temp_dir_path)
+    audio_file_clip = AudioFileClip(temp_dir_path)
 
-        final_audio.append(audio_clip)
-    combined_audio = concatenate_audioclips(final_audio)
-    combined_audio.write_audiofile(
-        "cache\\Story_output.mp3",
-        codec="mp3",
-        logger=proglog.TqdmProgressBarLogger(print_messages=False),
-    )
+    return audio_file_clip
 
 
 def adujst_vid_size(video_path):
@@ -141,14 +270,12 @@ def adujst_vid_size(video_path):
         return video_path
 
 
-def set_title_start(video_path, audio_path, image_path, rest_audio):
+def set_title_start(video_path, audio, image_path, audio2):
     video = VideoFileClip(video_path)
 
-    audio = AudioFileClip(audio_path)
-    audio2 = AudioFileClip(rest_audio)
     audio_final = concatenate_audioclips([audio, audio2])
-
-    image_clip = ImageClip(image_path)
+    image_array = np.array(image_path)
+    image_clip = ImageClip(image_array)
 
     scaling_factor = 0.2
     image_duration = audio.duration
@@ -165,21 +292,11 @@ def set_title_start(video_path, audio_path, image_path, rest_audio):
     return final_clip
 
 
-def add_captions(video_clip, audio_file_path, output_video_path):
-    audio_clip = AudioFileClip(audio_file_path)
-
-    transcriptions_file_path = "cache\\transcriptions.txt"
-    transcriptions = []
-
-    with open(transcriptions_file_path, "r") as transcriptions_file:
-        for line in transcriptions_file:
-            transcriptions.append(line)
-
+def add_captions(video_clip, audio_clip, output_video_path, transcriptions):
     text_clips = []
 
-    font = "title_image_data\\Stilu-Bold.otf"
+    font = "RedditClips\\title_image_data\\Stilu-Bold.otf"
     video_width, video_height = video_clip.size
-    font_size = ((video_height * 5) // 100) + 5
 
     font_color = "white"
     text_start_offset = audio_clip.duration
@@ -201,7 +318,7 @@ def add_captions(video_clip, audio_file_path, output_video_path):
             color=font_color,
             font=font,
             stroke_color="black",
-            stroke_width=5,
+            stroke_width=font_size * 0.05,
         )
         zoom_factor = 0.03
         original_position = "center"
@@ -242,13 +359,35 @@ def add_captions(video_clip, audio_file_path, output_video_path):
     video_clip = video_clip.subclip(0, end_time + text_start_offset + 1)
 
     composite_video = CompositeVideoClip([video_clip] + text_clips)
-
+    print("Writing Video...")
     composite_video.write_videofile(
         output_video_path,
         threads=4,
-        codec="libx264",
+        codec="nvenc_h264",
         fps=60,
-        logger=proglog.TqdmProgressBarLogger(print_messages=False),
+        logger=proglog.TqdmProgressBarLogger(print_messages=False, leave_bars=True),
+        ffmpeg_params=[
+            "-threads",
+            "4",
+            "-movflags",
+            "+faststart",
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "medium",
+            "-tune",
+            "animation",
+            "-rc",
+            "vbr",
+            "-cq",
+            "0",
+            "-qmin:v",
+            "10",
+            "-qmax:v",
+            "30",
+            "-vf",
+            "scale=1080:1920",
+        ],
     )
     print("Video Uploaded to: {}".format(output_video_path))
 

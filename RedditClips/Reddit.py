@@ -5,8 +5,9 @@ import re
 
 def set_up_config_settings():
     config = configparser.ConfigParser()
-    config_file = "config.txt"
+    config_file = "RedditClips\config.txt"
     config.read(config_file)
+
     if config.has_section("API"):
         client_id = config.get("API", "client_id")
         client_secret = config.get("API", "client_secret")
@@ -18,7 +19,9 @@ def set_up_config_settings():
             client_secret=client_secret,
             user_agent=username,
         )
+
         return reddit
+
 
 def fetch_reddit_post_data(post_url, reddit):
     try:

@@ -1,9 +1,0 @@
-[API]
-client_id = 
-client_secret =
-username = 
-password =
-2fa = 
-
-[ASSEMBLYAI]
-key = 
